@@ -1,4 +1,4 @@
-name: Build Android App Bundle (.aab)
+name: Build Android App Bundle (.aab) & APK
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-android:
     name: Build Android AAB for Google Play Console
     runs-on: ubuntu-latest
 
@@ -14,7 +14,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -29,59 +29,77 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Project Dependencies
-        run: npm ci || npm install
-
-      - name: Build Web Application
-        run: npm run build
-
-      - name: Install Bubblewrap CLI
-        run: npm install -g @bubblewrap/cli
-
-      - name: Prepare Android Project & Build AAB
+      - name: Install Node Dependencies
         run: |
-          echo "Starting Android TWA App Bundle packaging..."
-          mkdir -p android-build
-          # Generate sample keystore if signing key is not provided in secrets
+          npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+
+      - name: Build Web Production Assets
+        run: |
+          npm run build
+
+      - name: Sync Capacitor Android
+        run: |
+          npx cap sync android
+
+      - name: Build Android Bundle (.aab) and APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease assembleRelease --stacktrace
+
+      - name: Sign Android App Bundle (AAB) for Google Play
+        run: |
+          # Generate signing key if not present
           keytool -genkeypair -v \
-            -keystore android.keystore \
-            -alias android \
+            -keystore my-release-key.jks \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
+            -alias zipline-key \
             -storepass android123 \
             -keypass android123 \
-            -dname "CN=ZipLine, OU=Games, O=ZipLine, L=City, S=State, C=US"
+            -dname "CN=ZipLine Game, OU=Mobile, O=ZipLine, L=Riyadh, ST=Riyadh, C=SA"
 
-          # Create twa-manifest.json
-          cat << 'EOF' > twa-manifest.json
-          {
-            "packageId": "com.zipline.game.puzzle",
-            "host": "zipline.game",
-            "name": "ZipLine",
-            "launcherName": "ZipLine",
-            "display": "standalone",
-            "themeColor": "#070B14",
-            "navigationColor": "#070B14",
-            "backgroundColor": "#070B14",
-            "enableNotifications": false,
-            "startUrl": "/",
-            "iconUrl": "https://raw.githubusercontent.com/${{ github.repository }}/main/public/pwa-512x512.png",
-            "maskableIconUrl": "https://raw.githubusercontent.com/${{ github.repository }}/main/public/pwa-maskable-512x512.png",
-            "appVersionName": "1.0.0",
-            "appVersionCode": 1,
-            "signingKey": {
-              "path": "./android.keystore",
-              "alias": "android"
-            },
-            "generatorApp": "bubblewrap-cli"
-          }
-          EOF
+          # Sign the AAB bundle
+          AAB_PATH=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          if [ -f "$AAB_PATH" ]; then
+            echo "Signing $AAB_PATH..."
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+              -keystore my-release-key.jks \
+              -storepass android123 \
+              -keypass android123 \
+              "$AAB_PATH" zipline-key
+            mkdir -p release-output
+            cp "$AAB_PATH" release-output/zipline-game-release.aab
+            echo "AAB successfully generated and signed at release-output/zipline-game-release.aab"
+          else
+            echo "Warning: AAB file not found at expected path"
+          fi
 
-          echo "Bubblewrap setup ready. Ready for gradlew bundleRelease"
+          # Also locate APK if generated
+          APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -f "$APK_PATH" ]; then
+            mkdir -p release-output
+            cp "$APK_PATH" release-output/zipline-game-release.apk
+            echo "APK ready at release-output/zipline-game-release.apk"
+          fi
 
-      - name: Upload Web Build Artifact
+      - name: Upload Android App Bundle (.aab) Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: zipline-web-dist
+          name: Google-Play-ZipLine-AAB
+          path: release-output/*.aab
+          if-no-files-found: warn
+
+      - name: Upload Android APK Artifact (For direct device testing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZipLine-Test-APK
+          path: release-output/*.apk
+          if-no-files-found: warn
+
+      - name: Upload Web Dist Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Web-Dist-Files
           path: dist/

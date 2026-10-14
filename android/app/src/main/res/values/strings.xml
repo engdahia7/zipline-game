@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ZipLine</string>
+    <string name="title_activity_main">ZipLine</string>
+    <string name="package_name">com.zipline.game.puzzle</string>
+    <string name="custom_url_scheme">com.zipline.game.puzzle</string>
+</resources>

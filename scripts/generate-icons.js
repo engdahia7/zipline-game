@@ -42,6 +42,26 @@ async function generate() {
     .png()
     .toFile(path.join(publicDir, 'favicon.ico'));
 
+  // 6. Android Mipmap icons if android directory exists
+  const resDir = path.resolve('android/app/src/main/res');
+  if (fs.existsSync(resDir)) {
+    const densities = [
+      { dir: 'mipmap-mdpi', size: 48 },
+      { dir: 'mipmap-hdpi', size: 72 },
+      { dir: 'mipmap-xhdpi', size: 96 },
+      { dir: 'mipmap-xxhdpi', size: 144 },
+      { dir: 'mipmap-xxxhdpi', size: 192 },
+    ];
+    for (const { dir, size } of densities) {
+      const targetPath = path.join(resDir, dir);
+      if (fs.existsSync(targetPath)) {
+        await sharp(iconSvg).resize(size, size).png().toFile(path.join(targetPath, 'ic_launcher.png'));
+        await sharp(iconSvg).resize(size, size).png().toFile(path.join(targetPath, 'ic_launcher_round.png'));
+      }
+    }
+    console.log('Successfully updated Android launcher icons!');
+  }
+
   console.log('Successfully generated all PWA & Android icons!');
 }
 

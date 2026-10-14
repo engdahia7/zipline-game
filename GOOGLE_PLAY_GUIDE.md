@@ -1,70 +1,68 @@
 # دليل رفع لعبة ZipLine إلى Google Play Console وإنشاء ملف AAB
 
-تم تجهيز المشروع بالكامل كـ **Progressive Web App (PWA)** متوافق مع معايير Google Play ومتطلبات Trusted Web Activity (TWA) والأجهزة الذكية.
+تم تجهيز المشروع بالكامل بحزمة Native Android (عبر Capacitor) وتطبيق PWA متوافق مع كافة معايير Google Play Console.
 
 ---
 
-## الخطوة 1: دفع المشروع إلى حسابك في GitHub (Push to GitHub)
+## سبب ظهور الخطأ السابق وحله (Fix Explanation)
 
-افتح سطر الأوامر (Terminal) ونفّذ الأوامر التالية لربط المشروع بمستودعك على GitHub:
+الخطأ الذي ظهر في GitHub Actions:
+```
+Error: Dependencies lock file is not found in /home/runner/work/...
+Supported file patterns: package-lock.json,npm-shrinkwrap.json,yarn.lock
+```
+**السبب:**
+خطوة `actions/setup-node@v4` كانت مفعّلة بخاصية التخزين المؤقت `cache: 'npm'`، والتي تتطلب وجود ملف `package-lock.json` في المستودع لحساب بصمة التخزين، ولم يكن الملف مضافاً للـ Git.
+
+**ما تم إصلاحه الآن:**
+1. تم توليد ملف `package-lock.json` نظيف ومتوافق 100% مع كافة التبعيات.
+2. تم ضبط إعدادات التبعيات (`--legacy-peer-deps`) لمنع أي تعارض مستقبلي.
+3. تم تضمين مشروع أندرويد الأصلي مع `gradlew` وأيقونات الدقة العالية (Mipmaps).
+4. تم تحديث ملف سير العمل (`.github/workflows/build-android-bundle.yml`) ليبني ملف الـ `.aab` الموقّع وملف `.apk` التجريبي تلقائياً مع كل رفع (Push).
+
+---
+
+## الخطوة 1: دفع التحديثات إلى GitHub
+
+نفّذ الأوامر التالية لرفع ملفات القفل والمشروع إلى مستودعك:
 
 ```bash
-# 1. إضافة الرابط الخاص بمستودعك على GitHub (استبدل USERNAME و REPO_NAME برابط مستودعك)
-git remote add origin https://github.com/USERNAME/REPO_NAME.git
+# 1. إضافة كل الملفات الجديدة (بما فيها package-lock.json ومشروع الأندرويد)
+git add .
 
-# 2. التأكد من اسم الفرع الرئيسي main
+# 2. تسجيل التغييرات
+git commit -m "fix: add package-lock.json and complete Android AAB workflow"
+
+# 3. التأكد من اسم الفرع
 git branch -M main
 
-# 3. دفع الكود إلى GitHub
+# 4. الدفع إلى مستودعك على GitHub
 git push -u origin main
 ```
 
-> **ملاحظة:** إذا كنت تستخدم مفتاح الوصول الشخصي (Personal Access Token - PAT) أو SSH، يمكنك استخدام رابط الـ SSH: `git@github.com:USERNAME/REPO_NAME.git`.
+---
+
+## الخطوة 2: تحميل ملف الـ AAB من GitHub Actions
+
+بمجرد تشغيل أمر `git push`:
+1. افتح مستودعك على موقع **GitHub**.
+2. اذهب إلى تبويب **Actions** من الأعلى.
+3. ستجد سير العمل قيد التشغيل: **Build Android App Bundle (.aab) & APK**.
+4. عند اكتمال البناء (يظهر بعلامة صح خضراء ✔️):
+   - اضغط على اسم الـ Run.
+   - انزل لأسفل الصفحة لقسم **Artifacts**.
+   - حمّل ملف: **`Google-Play-ZipLine-AAB`** (هذا هو الملف الجاهز للرفع الفوري على Google Play Console).
+   - يتوفر أيضاً ملف: **`ZipLine-Test-APK`** لتثبيته وتجربته على هاتفك الأندرويد مباشرة!
 
 ---
 
-## الخطوة 2: إنشاء ملف الـ AAB (Android App Bundle) لرفعه على Google Play Console
+## الخطوة 3: رفع الملف إلى Google Play Console
 
-لديك **3 طرق معتمدة وسريعة** للحصول على ملف `.aab`:
-
-### الطريقة الأولى (الأسهل والأسرع - عبر PWABuilder المدعوم رسمياً من Google):
-1. افتح الموقع الرسمي: [https://www.pwabuilder.com](https://www.pwabuilder.com)
-2. ضع رابط اللعبة المنشورة (أو الرابط الخاص بك).
-3. اضغط **Package for Stores** ثم اختر **Google Play**.
-4. حدد إعدادات الحزمة:
-   - **Package ID:** `com.zipline.game.puzzle`
-   - **App Name:** `ZipLine`
-   - **Version Name:** `1.0.0`
-5. اضغط **Generate Package** وسيقوم الموقع فوراً بإنشاء ملف `.aab` الموقّع والجاهز للرفع على Google Play Console!
-
----
-
-### الطريقة الثانية (عبر أداة Google الرسمية Bubblewrap CLI):
-إذا كنت تفضل بناء الملف محلياً على جهازك:
-
-```bash
-# تثبيت أداة Google الرسمية
-npm install -g @bubblewrap/cli
-
-# تهيئة حزمة أندرويد
-bubblewrap init --manifest=https://YOUR_APP_URL/manifest.webmanifest
-
-# بناء ملف AAB الموقّع
-bubblewrap build
-```
-سيُنتج لك هذا الأمر ملف `app-release-bundle.aab` في المجلد الحالي مباشرة.
-
----
-
-### الطريقة الثالثة (أتمتة البناء عبر GitHub Actions):
-تم تضمين ملف سير عمل جاهز داخل المشروع:
-`.github/workflows/build-android-bundle.yml`
-بمجرد دفع الكود إلى GitHub، يمكنك التوجه إلى تبويب **Actions** في مستودعك وتشغيل الـ Workflow لتحميل ناتج البناء كملف مضغوط (Artifact).
-
----
-
-## متطلبات إضافية لـ Google Play Console:
-- **اسم الحزمة (Package ID):** مثل `com.zipline.game.puzzle`
-- **الأيقونات:** موجودة بجودة عالية في مجلد `public/` (بمقاسات 192x192 و 512x512 مع أيقونة Maskable متوافقة مع شاشات Android الحديثة).
-- **سياسة الخصوصية (Privacy Policy):** يلزم توفير رابط سياسة خصوصية بسيط عند رفع اللعبة.
-- **ملف الربط (Digital Asset Links):** في حال رغبت بإخفاء شريط العنوان للمتصفح بالكامل، يمكنك رفع ملف `assetlinks.json` الذي توفره لك أداة Bubblewrap أو Google Console.
+1. ادخل إلى [Google Play Console](https://play.google.com/console).
+2. اختر تطبيقك أو أنشئ تطبيقاً جديداً (**Create App**):
+   - اسم التطبيق: **ZipLine**
+   - النوع: لعبة مجانية (Game - Free).
+3. انتقل إلى **Release** -> **Production** (أو **Internal testing** للتجربة).
+4. اضغط **Create new release**.
+5. اسحب ملف الـ `.aab` الذي حمّلته من تبويب Artifacts في GitHub.
+6. أكمل بيانات وصف اللعبة والصور وسياسة الخصوصية واضغط **Review release** ثم **Start rollout**!

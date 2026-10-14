@@ -1,0 +1,8 @@
+{
+	"appId": "com.zipline.game.puzzle",
+	"appName": "ZipLine",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
+}
