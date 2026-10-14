@@ -43,17 +43,33 @@ jobs:
 
       - name: Prepare Capacitor Android Platform
         run: |
-          # If android directory or gradlew is missing, create it automatically
-          if [ ! -f "android/gradlew" ]; then
-            echo "Android native project not found in repository. Initializing Capacitor Android..."
+          # If android directory does not exist, initialize Capacitor Android
+          if [ ! -d "android" ]; then
+            echo "Android directory not found in repository. Initializing Capacitor Android..."
             npx cap add android
-            if [ -f "android/variables.gradle" ]; then
-              sed -i 's/compileSdkVersion = 36/compileSdkVersion = 35/g' android/variables.gradle || true
-              sed -i 's/targetSdkVersion = 36/targetSdkVersion = 35/g' android/variables.gradle || true
-            fi
+          else
+            echo "Android native directory is already present."
+          fi
+
+          # Ensure gradlew executable wrapper is available
+          if [ ! -f "android/gradlew" ]; then
+            echo "Restoring gradlew wrapper into android/..."
+            tar -xzf node_modules/@capacitor/cli/assets/android-template.tar.gz -C android gradlew gradlew.bat 2>/dev/null || (cd android && gradle wrapper 2>/dev/null) || true
+          fi
+          chmod +x android/gradlew 2>/dev/null || true
+
+          # Adjust SDK versions if needed
+          if [ -f "android/variables.gradle" ]; then
+            sed -i 's/compileSdkVersion = 36/compileSdkVersion = 35/g' android/variables.gradle || true
+            sed -i 's/targetSdkVersion = 36/targetSdkVersion = 35/g' android/variables.gradle || true
+          fi
+
+          # Generate high-res Android & PWA icons
+          if [ -f "./scripts/generate-icons.js" ]; then
             echo "Generating high-res icons for Android mipmap..."
             node ./scripts/generate-icons.js || true
           fi
+
           echo "Syncing Capacitor assets to Android..."
           npx cap sync android
 
