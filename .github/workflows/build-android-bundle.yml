@@ -20,18 +20,19 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Setup Java JDK 17
+      - name: Setup Java JDK 21 (LTS)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Accept Android SDK Licenses
+      - name: Accept Android SDK Licenses & Install Components
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "platforms;android-35" "build-tools;36.0.0" "build-tools;35.0.0" || true
 
       - name: Install Node Dependencies
         run: |
@@ -69,12 +70,6 @@ jobs:
           fi
           chmod +x android/gradlew 2>/dev/null || true
 
-          # Adjust SDK versions if needed
-          if [ -f "android/variables.gradle" ]; then
-            sed -i 's/compileSdkVersion = 36/compileSdkVersion = 35/g' android/variables.gradle || true
-            sed -i 's/targetSdkVersion = 36/targetSdkVersion = 35/g' android/variables.gradle || true
-          fi
-
           # Generate high-res Android & PWA icons
           if [ -f "./scripts/generate-icons.js" ]; then
             echo "Generating high-res icons for Android mipmap..."
@@ -89,12 +84,7 @@ jobs:
           cd android
           chmod +x gradlew 2>/dev/null || true
           echo "Building Android App Bundle (.aab) and APK..."
-          if [ -f "gradlew" ]; then
-            ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --stacktrace || ./gradlew bundleRelease assembleRelease --no-daemon --stacktrace
-          else
-            echo "Using system gradle..."
-            gradle :app:bundleRelease :app:assembleRelease --no-daemon --stacktrace || gradle bundleRelease assembleRelease --no-daemon --stacktrace
-          fi
+          ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --stacktrace
 
       - name: Prepare and Sign Release Files
         run: |
