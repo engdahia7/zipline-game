@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Coordinate, Puzzle, GameMode, PlayerStats, PageTab, PlayerProfile } from './types/game';
+import { Coordinate, Puzzle, GameMode, PlayerStats, PageTab, PlayerProfile, Difficulty } from './types/game';
 import { CURATED_PUZZLES, getDailyPuzzle } from './data/puzzles';
 import {
   generatePuzzle,
@@ -52,8 +52,39 @@ import {
 export default function App() {
   const [lang, setLang] = useState<Language>('ar');
   const [currentTab, setCurrentTab] = useState<PageTab>('home');
-  const [gameMode, setGameMode] = useState<GameMode>('daily');
+  // Mode selection & persistence state
+  const [selectedMode, setSelectedMode] = useState<GameMode>(() => {
+    try {
+      const saved = localStorage.getItem('zipline_selected_mode');
+      if (saved && ['levels', 'timerush', 'suddendeath', 'daily', 'mega_weekly', 'custom'].includes(saved)) {
+        return saved as GameMode;
+      }
+    } catch {}
+    return 'levels';
+  });
+
+  const [selectedTier, setSelectedTier] = useState<Difficulty>(() => {
+    try {
+      const saved = localStorage.getItem('zipline_selected_tier');
+      if (saved && ['warmup', 'medium', 'hard', 'expert'].includes(saved)) {
+        return saved as Difficulty;
+      }
+    } catch {}
+    return 'warmup';
+  });
+
+  const [gameMode, setGameMode] = useState<GameMode>(() => {
+    try {
+      const saved = localStorage.getItem('zipline_selected_mode');
+      if (saved && ['levels', 'timerush', 'suddendeath', 'daily', 'mega_weekly', 'custom'].includes(saved)) {
+        return saved as GameMode;
+      }
+    } catch {}
+    return 'levels';
+  });
+
   const [soundEnabled, setSoundEnabled] = useState(sound.enabled);
+  const [suddenDeathStage, setSuddenDeathStage] = useState<number>(1);
 
   // Today's date string
   const todayStr = new Date().toISOString().split('T')[0];
@@ -190,18 +221,76 @@ export default function App() {
     setHintsUsedInPuzzle(0);
   };
 
+  // Mode selection & launch handlers
+  const handleSelectMode = (mode: GameMode, tier?: Difficulty) => {
+    setSelectedMode(mode);
+    setGameMode(mode);
+    try {
+      localStorage.setItem('zipline_selected_mode', mode);
+    } catch {}
+
+    if (tier) {
+      setSelectedTier(tier);
+      try {
+        localStorage.setItem('zipline_selected_tier', tier);
+      } catch {}
+    }
+
+    sound.playStep(1);
+    const modeNamesAr: Record<GameMode, string> = {
+      levels: `المراحل المتسلسلة (${tier || selectedTier})`,
+      timerush: 'سباق الوقت الخاطف (Blitz)',
+      suddendeath: 'الخطوة الواحدة (0 تراجع)',
+      daily: 'التحدي اليومي',
+      mega_weekly: 'الألغاز العملاقة ٩×٩',
+      custom: 'اللعب الحر المخصص',
+    };
+    showToast(
+      lang === 'ar'
+        ? `تم تفعيل ${modeNamesAr[mode]} - كل المراحل القادمة ستستمر بهذا النمط ✓`
+        : `Active mode set to ${mode} - all subsequent stages stay in this mode ✓`
+    );
+  };
+
+  const handleLaunchSelectedMode = () => {
+    if (selectedMode === 'levels') {
+      const tierPuzzles = CURATED_PUZZLES.filter(p => p.difficulty === selectedTier);
+      const uncompleted = tierPuzzles.find(p => !stats.completedPuzzles.includes(p.id));
+      const targetPuzzle = uncompleted || tierPuzzles[0];
+      loadNewPuzzle(targetPuzzle, 'levels');
+      setCurrentTab('play');
+    } else if (selectedMode === 'timerush') {
+      handlePlayTimeRush();
+    } else if (selectedMode === 'suddendeath') {
+      handlePlaySuddenDeath();
+    } else if (selectedMode === 'mega_weekly') {
+      handlePlayMegaWeekly();
+    } else if (selectedMode === 'custom') {
+      handlePlayCustom();
+    } else {
+      handlePlayDaily();
+    }
+  };
+
   // Quick navigation handlers from Home
   const handlePlayDaily = () => {
+    setSelectedMode('daily');
+    setGameMode('daily');
     const daily = getDailyPuzzle(todayStr);
     loadNewPuzzle(daily, 'daily');
     setCurrentTab('play');
   };
 
-  const handlePlayLevels = () => {
+  const handlePlayLevels = (tier?: Difficulty) => {
+    setSelectedMode('levels');
+    setGameMode('levels');
+    if (tier) setSelectedTier(tier);
     setCurrentTab('levels');
   };
 
   const handlePlayCustom = () => {
+    setSelectedMode('custom');
+    setGameMode('custom');
     const seed = Math.floor(Math.random() * 1000000) + 1;
     const p = generatePuzzle(6, 6, 'medium', `custom_${Date.now()}`, {
       en: 'Custom Challenge 6×6',
@@ -211,18 +300,23 @@ export default function App() {
     setCurrentTab('play');
   };
 
-  // New Modes Launchers
+  // Modes Launchers
   const handlePlayTimeRush = () => {
+    setSelectedMode('timerush');
+    setGameMode('timerush');
     const blitz = getTimeRushPuzzles();
     setTimeRushPuzzles(blitz);
     setTimeRushStage(1);
     setTimeRushTimeLeft(60);
     loadNewPuzzle(blitz[0], 'timerush');
     setCurrentTab('play');
-    showToast(lang === 'ar' ? '⚡ بدأ سباق الـ 60 ثانية! حل 3 ألغاز لكسب مضاعف عملات' : '⚡ 60s Time Rush started! Solve 3 blitz puzzles');
+    showToast(lang === 'ar' ? '⚡ بدأ سباق الـ 60 ثانية! حل الألغاز لكسب مضاعف عملات' : '⚡ 60s Time Rush started! Solve blitz puzzles');
   };
 
   const handlePlaySuddenDeath = () => {
+    setSelectedMode('suddendeath');
+    setGameMode('suddendeath');
+    setSuddenDeathStage(1);
     const p = getSuddenDeathPuzzle();
     loadNewPuzzle(p, 'suddendeath');
     setCurrentTab('play');
@@ -230,6 +324,8 @@ export default function App() {
   };
 
   const handlePlayMegaWeekly = () => {
+    setSelectedMode('mega_weekly');
+    setGameMode('mega_weekly');
     const p = getWeeklyMegaPuzzle();
     loadNewPuzzle(p, 'mega_weekly');
     setCurrentTab('play');
@@ -274,6 +370,14 @@ export default function App() {
   };
 
   const handleSelectLevel = (selectedPuzzle: Puzzle) => {
+    setSelectedMode('levels');
+    setGameMode('levels');
+    if (selectedPuzzle.difficulty) {
+      setSelectedTier(selectedPuzzle.difficulty);
+      try {
+        localStorage.setItem('zipline_selected_tier', selectedPuzzle.difficulty);
+      } catch {}
+    }
     loadNewPuzzle(selectedPuzzle, 'levels');
     setCurrentTab('play');
   };
@@ -606,18 +710,107 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
   }, [currentTab, isPaused, isCompleted, handleHint, handleClear]);
 
-  // Next puzzle button - Guarantees advancing to a distinct new puzzle every time
+  // Helper to get active mode display name
+  const getActiveModeName = () => {
+    switch (gameMode) {
+      case 'levels': {
+        const currentTier = puzzle.difficulty || selectedTier;
+        const tierNamesAr: Record<Difficulty, string> = { warmup: 'المبتدئ ٥×٥', medium: 'المتوسط ٦×٦', hard: 'المتقدم ٧×٧', expert: 'الخبير ٨×٨' };
+        const tierNamesEn: Record<Difficulty, string> = { warmup: 'Warm-Up 5×5', medium: 'Medium 6×6', hard: 'Hard 7×7', expert: 'Expert 8×8' };
+        return lang === 'ar' ? `نمط المراحل (${tierNamesAr[currentTier]})` : `Levels (${tierNamesEn[currentTier]})`;
+      }
+      case 'timerush':
+        return lang === 'ar' ? `سباق الوقت · مرحلة ${timeRushStage}` : `Time Rush · Stage ${timeRushStage}`;
+      case 'suddendeath':
+        return lang === 'ar' ? `الخطوة الواحدة · مرحلة ${suddenDeathStage}` : `Sudden Death · Stage ${suddenDeathStage}`;
+      case 'mega_weekly':
+        return lang === 'ar' ? 'اللغز العملاق ٩×٩' : 'Mega 9×9';
+      case 'custom':
+        return lang === 'ar' ? `لعب حر مخصص (${puzzle.width}×${puzzle.height})` : `Custom Sandbox (${puzzle.width}×${puzzle.height})`;
+      case 'daily':
+      default:
+        return lang === 'ar' ? 'التحدي اليومي' : 'Daily Challenge';
+    }
+  };
+
+  // Next puzzle button - Strictly guarantees continuing in the exact same chosen mode!
   const handleNextPuzzle = () => {
     setShowVictory(false);
+
     if (gameMode === 'levels') {
-      const currIdx = CURATED_PUZZLES.findIndex(p => p.id === puzzle.id);
-      if (currIdx !== -1 && currIdx < CURATED_PUZZLES.length - 1) {
-        loadNewPuzzle(CURATED_PUZZLES[currIdx + 1], 'levels');
+      const currentTier = puzzle.difficulty || selectedTier;
+      const tierPuzzles = CURATED_PUZZLES.filter(p => p.difficulty === currentTier);
+      const tierIndex = tierPuzzles.findIndex(p => p.id === puzzle.id);
+
+      if (tierIndex !== -1 && tierIndex < tierPuzzles.length - 1) {
+        // Next curated puzzle in the same tier
+        const nextP = tierPuzzles[tierIndex + 1];
+        loadNewPuzzle(nextP, 'levels');
+        showToast(lang === 'ar' ? `المستوى التالي: ${nextP.titleAr}` : `Next Level: ${nextP.title}`);
       } else {
-        const nextUncompleted = CURATED_PUZZLES.find(p => !stats.completedPuzzles.includes(p.id));
-        loadNewPuzzle(nextUncompleted || CURATED_PUZZLES[0], 'levels');
+        // Beyond the curated puzzles of this tier: Procedurally generate endless stages in this exact same tier!
+        const nextStageNum = (tierIndex !== -1 ? tierIndex + 2 : Math.floor(Math.random() * 50) + 7);
+        const tierSizeMap: Record<Difficulty, number> = { warmup: 5, medium: 6, hard: 7, expert: 8 };
+        const size = tierSizeMap[currentTier] || 6;
+        const seed = Math.floor(Math.random() * 9999999) + 1;
+        const tierNamesAr: Record<Difficulty, string> = { warmup: 'المبتدئ', medium: 'المتوسط', hard: 'المتقدم', expert: 'الخبير' };
+        const tierNamesEn: Record<Difficulty, string> = { warmup: 'Warm-Up', medium: 'Medium', hard: 'Advanced', expert: 'Expert' };
+
+        const newP = generatePuzzle(
+          size,
+          size,
+          currentTier,
+          `tier_${currentTier}_endless_${Date.now()}_${seed}`,
+          {
+            en: `${tierNamesEn[currentTier]} Level ${nextStageNum}`,
+            ar: `${tierNamesAr[currentTier]} المستوى ${nextStageNum}`,
+          },
+          seed
+        );
+        loadNewPuzzle(newP, 'levels');
+        showToast(lang === 'ar' ? `المستوى التالي: ${tierNamesAr[currentTier]} المستوى ${nextStageNum} (${size}×${size})` : `Next Level: ${tierNamesEn[currentTier]} Level ${nextStageNum} (${size}×${size})`);
       }
+    } else if (gameMode === 'suddendeath') {
+      // Continue in Sudden Death across all subsequent stages
+      const nextStage = suddenDeathStage + 1;
+      setSuddenDeathStage(nextStage);
+      const ts = Date.now();
+      const size = nextStage % 2 === 0 ? 7 : 6;
+      const diff: Difficulty = nextStage >= 4 ? 'expert' : 'hard';
+      const nextP = generatePuzzle(
+        size,
+        size,
+        diff,
+        `sudden_death_stage_${nextStage}_${ts}`,
+        {
+          en: `Sudden Death Stage ${nextStage}`,
+          ar: `الخطوة الواحدة: المرحلة ${nextStage}`,
+        }
+      );
+      loadNewPuzzle(nextP, 'suddendeath');
+      showToast(lang === 'ar' ? `💀 الخطوة الواحدة: تقدمت إلى المرحلة ${nextStage} (0 تراجع)` : `💀 Sudden Death: Advanced to Stage ${nextStage} (0 Backtracks)`);
+    } else if (gameMode === 'timerush') {
+      // Continue in Time Rush blitz across all subsequent stages
+      const nextStage = timeRushStage + 1;
+      setTimeRushStage(nextStage);
+      setTimeRushTimeLeft(prev => prev + 20); // +20 seconds bonus time
+      const ts = Date.now();
+      const size = nextStage <= 2 ? 5 : nextStage <= 5 ? 6 : 7;
+      const diff: Difficulty = nextStage <= 2 ? 'warmup' : nextStage <= 4 ? 'medium' : 'hard';
+      const nextP = generatePuzzle(
+        size,
+        size,
+        diff,
+        `blitz_stage_${nextStage}_${ts}`,
+        {
+          en: `Blitz Stage ${nextStage}`,
+          ar: `سباق الوقت: المرحلة ${nextStage}`,
+        }
+      );
+      loadNewPuzzle(nextP, 'timerush');
+      showToast(lang === 'ar' ? `⚡ سباق الوقت: المرحلة ${nextStage} (+20 ثانية إضافية!)` : `⚡ Blitz Stage ${nextStage} (+20s Bonus Time!)`);
     } else if (gameMode === 'custom') {
+      // Custom mode: Keep the exact same width, height, and difficulty!
       const newSeed = Math.floor(Math.random() * 9999999) + 1;
       const newP = generatePuzzle(
         puzzle.width,
@@ -631,22 +824,47 @@ export default function App() {
         newSeed
       );
       loadNewPuzzle(newP, 'custom');
+      showToast(lang === 'ar' ? `مرحلة جديدة بنفس المقاس (${puzzle.width}×${puzzle.height})` : `New custom stage (${puzzle.width}×${puzzle.height})`);
+    } else if (gameMode === 'mega_weekly') {
+      // Mega 9x9 master puzzles continue
+      const seed = Math.floor(Math.random() * 9999999) + 1;
+      const nextP = generatePuzzle(
+        9,
+        9,
+        'expert',
+        `mega_master_${Date.now()}_${seed}`,
+        {
+          en: `Mega 9×9 Master Puzzle`,
+          ar: `لغز عملاق ٩×٩ جديد`,
+        },
+        seed
+      );
+      loadNewPuzzle(nextP, 'mega_weekly');
+      showToast(lang === 'ar' ? '👑 لغز عملاق 9×9 جديد!' : '👑 New Mega 9×9 Puzzle!');
     } else {
-      // In daily mode: Advance to consecutive next day challenge
+      // Daily mode: Advance to next daily challenge date
       const currDate = puzzle.dailyDate ? new Date(puzzle.dailyDate) : new Date(todayStr);
       currDate.setDate(currDate.getDate() + 1);
       const nextDateStr = currDate.toISOString().split('T')[0];
       const nextDaily = getDailyPuzzle(nextDateStr);
       loadNewPuzzle(nextDaily, 'daily');
+      showToast(lang === 'ar' ? `تحدي اليوم التالي: ${nextDaily.titleAr}` : `Next Daily: ${nextDaily.title}`);
     }
   };
 
   // Previous puzzle button
   const handlePrevPuzzle = () => {
     if (gameMode === 'levels') {
-      const currIdx = CURATED_PUZZLES.findIndex(p => p.id === puzzle.id);
-      if (currIdx > 0) {
-        loadNewPuzzle(CURATED_PUZZLES[currIdx - 1], 'levels');
+      const currentTier = puzzle.difficulty || selectedTier;
+      const tierPuzzles = CURATED_PUZZLES.filter(p => p.difficulty === currentTier);
+      const tierIndex = tierPuzzles.findIndex(p => p.id === puzzle.id);
+      if (tierIndex > 0) {
+        loadNewPuzzle(tierPuzzles[tierIndex - 1], 'levels');
+      } else {
+        const currIdx = CURATED_PUZZLES.findIndex(p => p.id === puzzle.id);
+        if (currIdx > 0) {
+          loadNewPuzzle(CURATED_PUZZLES[currIdx - 1], 'levels');
+        }
       }
     } else if (gameMode === 'daily') {
       const currDate = puzzle.dailyDate ? new Date(puzzle.dailyDate) : new Date(todayStr);
@@ -727,6 +945,10 @@ export default function App() {
             dailyPuzzle={getDailyPuzzle(todayStr)}
             playerProfile={playerProfile}
             playerStats={stats}
+            selectedMode={selectedMode}
+            selectedTier={selectedTier}
+            onSelectMode={handleSelectMode}
+            onLaunchSelectedMode={handleLaunchSelectedMode}
             onPlayDaily={handlePlayDaily}
             onPlayLevels={handlePlayLevels}
             onPlayCustom={handlePlayCustom}
@@ -745,6 +967,19 @@ export default function App() {
         {/* 2. Play Board Tab */}
         {currentTab === 'play' && (
           <div className="w-full flex flex-col items-center">
+            {/* Active Mode Banner */}
+            <div className="w-full max-w-[min(92vw,440px)] sm:max-w-[460px] mx-auto flex items-center justify-between pb-1.5 px-1 text-xs">
+              <span className="flex items-center gap-1.5 font-bold">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className={isDarkMode ? 'text-amber-400' : 'text-amber-600'}>
+                  {getActiveModeName()}
+                </span>
+              </span>
+              <span className={`text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                {lang === 'ar' ? 'المراحل مستمرة بنفس النمط ✓' : 'Mode locked ✓'}
+              </span>
+            </div>
+
             {/* Puzzle Metadata & Subheading */}
             <div className="w-full max-w-[min(92vw,440px)] sm:max-w-[460px] mx-auto flex items-center justify-between pb-1.5 sm:pb-3 pt-0.5 gap-2">
               <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
@@ -889,6 +1124,13 @@ export default function App() {
               completedPuzzleIds={stats.completedPuzzles}
               puzzleStars={stats.puzzleStars}
               onSelectPuzzle={handleSelectLevel}
+              initialTier={selectedTier}
+              onSelectTier={(tier) => {
+                setSelectedTier(tier);
+                try {
+                  localStorage.setItem('zipline_selected_tier', tier);
+                } catch {}
+              }}
               lang={lang}
               isDarkMode={isDarkMode}
             />
@@ -1042,6 +1284,7 @@ export default function App() {
         isDaily={gameMode === 'daily'}
         earnedCoins={earnedCoinsLastWin}
         stars={lastWonStars}
+        modeName={getActiveModeName()}
         onNext={handleNextPuzzle}
         onReplay={() => loadNewPuzzle(puzzle)}
         lang={lang}

@@ -9,6 +9,7 @@ interface VictoryModalProps {
   isDaily: boolean;
   earnedCoins?: number;
   stars?: number;
+  modeName?: string;
   onNext: () => void;
   onReplay: () => void;
   lang: Language;
@@ -22,6 +23,7 @@ export const VictoryModal: React.FC<VictoryModalProps> = ({
   isDaily,
   earnedCoins = 35,
   stars = 3,
+  modeName,
   onNext,
   onReplay,
   lang,
@@ -136,7 +138,13 @@ export const VictoryModal: React.FC<VictoryModalProps> = ({
             className="w-full flex items-center justify-center gap-2 py-3.5 px-4 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 hover:brightness-105 text-slate-950 font-black text-sm rounded-2xl transition-all shadow-lg shadow-amber-500/25 border border-amber-300 active:scale-98 cursor-pointer"
           >
             <Play className="w-4 h-4 fill-current" />
-            <span>{t.nextPuzzle}</span>
+            <span>
+              {modeName
+                ? lang === 'ar'
+                  ? `${t.nextPuzzle} (${modeName})`
+                  : `Next: ${modeName}`
+                : t.nextPuzzle}
+            </span>
           </button>
 
           <div className="grid grid-cols-2 gap-2">

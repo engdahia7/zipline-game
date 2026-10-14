@@ -11,6 +11,8 @@ interface LevelSelectorProps {
   onSelectPuzzle: (puzzle: Puzzle) => void;
   lang: Language;
   isDarkMode?: boolean;
+  initialTier?: Difficulty;
+  onSelectTier?: (tier: Difficulty) => void;
 }
 
 export const LevelSelector: React.FC<LevelSelectorProps> = ({
@@ -21,8 +23,10 @@ export const LevelSelector: React.FC<LevelSelectorProps> = ({
   onSelectPuzzle,
   lang,
   isDarkMode = true,
+  initialTier = 'warmup',
+  onSelectTier,
 }) => {
-  const [activeTier, setActiveTier] = useState<Difficulty>('warmup');
+  const [activeTier, setActiveTier] = useState<Difficulty>(initialTier);
   const t = translations[lang];
 
   const tiers: Array<{ id: Difficulty; label: string; size: string; tierAr: string }> = [
@@ -48,7 +52,10 @@ export const LevelSelector: React.FC<LevelSelectorProps> = ({
         {tiers.map(tier => (
           <button
             key={tier.id}
-            onClick={() => setActiveTier(tier.id)}
+            onClick={() => {
+              setActiveTier(tier.id);
+              onSelectTier?.(tier.id);
+            }}
             className={`py-2 px-1 text-xs font-black rounded-xl transition-all text-center cursor-pointer ${
               activeTier === tier.id
                 ? isDarkMode

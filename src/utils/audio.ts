@@ -74,6 +74,11 @@ class SoundEngine {
     }
   }
 
+  // Quick crisp pop for UI button taps
+  public playPop() {
+    this.playStep(1);
+  }
+
   // Melodic chime when a numbered checkpoint is reached
   public playCheckpoint(val: number = 1) {
     this.triggerHaptic(20);

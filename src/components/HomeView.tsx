@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PlayerProfile, PlayerStats, Puzzle } from '../types/game';
+import { PlayerProfile, PlayerStats, Puzzle, GameMode, Difficulty } from '../types/game';
 import { translations, Language } from '../i18n/translations';
 import { claimDailyReward, canClaimDailyReward } from '../utils/profile';
 import { sound } from '../utils/audio';
@@ -7,27 +7,29 @@ import { triggerConfetti } from '../utils/confetti';
 import {
   Play,
   Flame,
-  Trophy,
-  Coins,
   Layers,
   Dices,
-  ShoppingBag,
-  ShieldCheck,
   Gift,
   Check,
-  Lightbulb,
-  Tv,
   Zap,
   Skull,
   Crown,
+  Calendar,
+  Sparkles,
+  ArrowRight,
+  ChevronRight,
 } from 'lucide-react';
 
 interface HomeViewProps {
   dailyPuzzle: Puzzle;
   playerProfile: PlayerProfile;
   playerStats: PlayerStats;
+  selectedMode: GameMode;
+  selectedTier: Difficulty;
+  onSelectMode: (mode: GameMode, tier?: Difficulty) => void;
+  onLaunchSelectedMode: () => void;
   onPlayDaily: () => void;
-  onPlayLevels: () => void;
+  onPlayLevels: (tier?: Difficulty) => void;
   onPlayCustom: () => void;
   onPlayTimeRush?: () => void;
   onPlaySuddenDeath?: () => void;
@@ -44,15 +46,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
   dailyPuzzle,
   playerProfile,
   playerStats,
+  selectedMode,
+  selectedTier,
+  onSelectMode,
+  onLaunchSelectedMode,
   onPlayDaily,
-  onPlayLevels,
-  onPlayCustom,
-  onPlayTimeRush,
-  onPlaySuddenDeath,
-  onPlayMegaWeekly,
-  onOpenShop,
   onOpenProfile,
-  onOpenAdModal,
   onUpdateProfile,
   lang,
   isDarkMode = true,
@@ -75,8 +74,121 @@ export const HomeView: React.FC<HomeViewProps> = ({
     }
   };
 
+  // Helper metadata for active mode
+  const getModeInfo = (mode: GameMode) => {
+    switch (mode) {
+      case 'levels':
+        return {
+          title: t.modeLevelsTitle,
+          subtitle: lang === 'ar' ? '24 مرحلة تدريجية + مراحل متتالية لا نهائية' : '24 progressive stages + infinite levels',
+          icon: Layers,
+          badgeColor: 'text-amber-400 bg-amber-400/10 border-amber-400/30',
+        };
+      case 'timerush':
+        return {
+          title: t.modeTimeRushTitle,
+          subtitle: lang === 'ar' ? 'مراحل متتالية سريعة ضد عداد 60 ثانية' : 'Fast continuous stages against 60s timer',
+          icon: Zap,
+          badgeColor: 'text-orange-400 bg-orange-400/10 border-orange-400/30',
+        };
+      case 'suddendeath':
+        return {
+          title: t.modeSuddenDeathTitle,
+          subtitle: lang === 'ar' ? 'بدون أي تراجع مسموح في جميع المراحل' : '0 backtracks allowed in all stages',
+          icon: Skull,
+          badgeColor: 'text-rose-400 bg-rose-500/10 border-rose-500/30',
+        };
+      case 'daily':
+        return {
+          title: t.modeDailyTitle,
+          subtitle: lang === 'ar' ? 'لغز التقويم اليومي المتجدد' : 'Daily calendar puzzle progression',
+          icon: Calendar,
+          badgeColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+        };
+      case 'mega_weekly':
+        return {
+          title: t.modeMegaTitle,
+          subtitle: lang === 'ar' ? 'مراحل عملاقة 9×9 فائقة التحدي (+120 عملة)' : 'Colossal 9×9 master challenge (+120 coins)',
+          icon: Crown,
+          badgeColor: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
+        };
+      case 'custom':
+      default:
+        return {
+          title: t.modeCustomTitle,
+          subtitle: lang === 'ar' ? 'توليد مراحل حرة بالمقاس المختار' : 'Endless puzzles with your custom settings',
+          icon: Dices,
+          badgeColor: 'text-sky-400 bg-sky-500/10 border-sky-500/30',
+        };
+    }
+  };
+
+  const activeModeDetails = getModeInfo(selectedMode);
+  const ActiveIcon = activeModeDetails.icon;
+
+  const tiersList: Array<{ id: Difficulty; label: string; size: string }> = [
+    { id: 'warmup', label: t.tierWarmup, size: '5×5' },
+    { id: 'medium', label: t.tierMedium, size: '6×6' },
+    { id: 'hard', label: t.tierHard, size: '7×7' },
+    { id: 'expert', label: t.tierExpert, size: '8×8' },
+  ];
+
+  // Compact mode list configuration
+  const modeCards: Array<{
+    id: GameMode;
+    title: string;
+    tag: string;
+    icon: React.ComponentType<{ className?: string }>;
+    accentColor: string;
+  }> = [
+    {
+      id: 'levels',
+      title: t.modeLevelsTitle,
+      tag: lang === 'ar' ? '24 مرحلة + مستمر' : '24 Levels + Endless',
+      icon: Layers,
+      accentColor: 'text-amber-400 bg-amber-400/15',
+    },
+    {
+      id: 'timerush',
+      title: t.modeTimeRushTitle,
+      tag: lang === 'ar' ? 'عداد 60 ثانية' : '60s Blitz',
+      icon: Zap,
+      accentColor: 'text-orange-400 bg-orange-400/15',
+    },
+    {
+      id: 'suddendeath',
+      title: t.modeSuddenDeathTitle,
+      tag: lang === 'ar' ? 'بدون أي تراجع' : '0 Backtracks',
+      icon: Skull,
+      accentColor: 'text-rose-400 bg-rose-500/15',
+    },
+    {
+      id: 'daily',
+      title: t.modeDailyTitle,
+      tag: isDailyDone
+        ? (lang === 'ar' ? 'مكتمل اليوم ✓' : 'Solved today ✓')
+        : (lang === 'ar' ? 'لغز اليوم جاهز' : 'Available now'),
+      icon: Calendar,
+      accentColor: 'text-emerald-400 bg-emerald-500/15',
+    },
+    {
+      id: 'mega_weekly',
+      title: t.modeMegaTitle,
+      tag: lang === 'ar' ? 'رقعة 9×9 عملاقة' : 'Colossal 9×9',
+      icon: Crown,
+      accentColor: 'text-purple-400 bg-purple-500/15',
+    },
+    {
+      id: 'custom',
+      title: t.modeCustomTitle,
+      tag: lang === 'ar' ? 'لعب حر ومقاسات' : 'Custom Sandbox',
+      icon: Dices,
+      accentColor: 'text-sky-400 bg-sky-500/15',
+    },
+  ];
+
   return (
-    <div className="w-full max-w-md mx-auto space-y-2.5 animate-fade-in py-0.5">
+    <div className="w-full max-w-lg mx-auto space-y-3 animate-fade-in py-1">
       {/* Toast Alert */}
       {claimToast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-stone-950 text-amber-300 text-xs font-bold py-2 px-4 rounded-xl shadow-xl border border-amber-400/80 backdrop-blur-sm animate-fade-in whitespace-nowrap">
@@ -84,331 +196,248 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       )}
 
-      {/* 1. Slim Profile Header Strip (No redundant coins, clean & compact) */}
+      {/* 1. Header: Profile avatar, Streak & Daily Claim */}
       <div
-        className={`flex items-center justify-between p-2 px-3 rounded-2xl border transition-colors ${
+        className={`flex items-center justify-between p-2.5 px-3.5 rounded-2xl border transition-all ${
           isDarkMode
             ? 'bg-[#0f172a]/80 border-[#1e2942]'
-            : 'bg-white border-slate-200 shadow-xs'
+            : 'bg-white border-slate-200 shadow-2xs'
         }`}
       >
-        {/* User Info (Click opens Profile) */}
         <button
           onClick={onOpenProfile}
-          className="flex items-center gap-2 min-w-0 text-start cursor-pointer group"
+          className="flex items-center gap-2.5 min-w-0 text-start cursor-pointer group"
         >
           <div
-            className={`w-8 h-8 rounded-xl flex items-center justify-center text-lg shrink-0 group-hover:scale-105 transition-transform ${
+            className={`w-9 h-9 rounded-xl flex items-center justify-center text-xl shrink-0 group-hover:scale-105 transition-transform ${
               isDarkMode
-                ? 'bg-amber-400/15 border border-amber-400/40'
+                ? 'bg-amber-400/15 border border-amber-400/30'
                 : 'bg-amber-100 border border-amber-300'
             }`}
           >
             {playerProfile.avatar}
           </div>
           <div className="min-w-0">
-            <div className="font-serif font-black text-xs leading-tight truncate group-hover:text-amber-400 transition-colors">
+            <div className="font-serif font-black text-xs sm:text-sm leading-tight truncate group-hover:text-amber-400 transition-colors">
               {playerProfile.name}
             </div>
-            <div className={`flex items-center gap-2 text-[10px] font-semibold mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              <span className="flex items-center gap-0.5 text-amber-400 font-bold">
-                <Flame className="w-3 h-3 fill-current text-amber-500" />
-                <span>{playerStats.currentStreak} {lang === 'ar' ? 'أيام متتالية' : 'day streak'}</span>
-              </span>
-              <span aria-hidden="true" className="opacity-40">·</span>
-              <span className="flex items-center gap-0.5">
-                <Trophy className="w-3 h-3 text-amber-500" />
-                <span>{playerStats.gamesWon} {lang === 'ar' ? 'فوز' : 'wins'}</span>
-              </span>
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-400 mt-0.5">
+              <Flame className="w-3.5 h-3.5 fill-current text-amber-500 shrink-0" />
+              <span>{playerStats.currentStreak} {lang === 'ar' ? 'أيام متتالية' : 'day streak'}</span>
             </div>
           </div>
         </button>
 
-        {/* Daily Gift Claim Button */}
-        <div className="shrink-0">
+        {/* Daily Reward Claim */}
+        <div>
           {canClaim ? (
             <button
               onClick={handleClaimReward}
               title={lang === 'ar' ? 'استلم مكافأة اليوم (+50 عملة)' : 'Claim Daily +50'}
-              className="flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-105 text-slate-950 font-black text-[11px] rounded-xl shadow-xs cursor-pointer active:scale-95 transition-all animate-pulse"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-amber-400 to-amber-500 hover:brightness-105 text-slate-950 font-black text-xs rounded-xl shadow-xs cursor-pointer active:scale-95 transition-all animate-pulse"
             >
-              <Gift className="w-3.5 h-3.5" />
+              <Gift className="w-4 h-4" />
               <span>+50 🪙</span>
             </button>
           ) : (
             <span
-              title={lang === 'ar' ? 'تم استلام مكافأة اليوم' : 'Daily reward claimed'}
-              className={`flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-lg ${
-                isDarkMode ? 'text-emerald-400 bg-emerald-500/10' : 'text-emerald-700 bg-emerald-50'
+              className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-xl ${
+                isDarkMode
+                  ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
+                  : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
               }`}
             >
-              <Check className="w-3 h-3 stroke-[3]" />
+              <Check className="w-3.5 h-3.5 stroke-[3]" />
               <span>{lang === 'ar' ? 'المكافأة مستلمة' : 'Claimed'}</span>
             </span>
           )}
         </div>
       </div>
 
-      {/* 2. Featured Daily Challenge Hero Card (Compact, stylish & uncluttered) */}
+      {/* 2. Hero Play Area (Uncluttered, Focused on Playing) */}
       <div
-        className={`relative overflow-hidden rounded-2xl p-3 sm:p-3.5 border transition-all ${
+        className={`relative overflow-hidden rounded-2xl p-4 sm:p-5 border-2 transition-all ${
           isDarkMode
-            ? 'bg-[#0f172a] text-white border-[#1e2942]'
-            : 'bg-[#0f172a] text-white border-slate-800 shadow-sm'
+            ? 'bg-gradient-to-br from-[#121c33] via-[#0f172a] to-[#0a101d] border-amber-400/50 shadow-md shadow-amber-500/5'
+            : 'bg-gradient-to-br from-amber-50/70 via-white to-amber-100/30 border-amber-400/70 shadow-xs'
         }`}
       >
-        <div className="relative z-10 flex flex-col gap-2.5">
+        <div className="space-y-3">
+          {/* Active Mode Tag & Continuity Notice */}
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
-              <div className="min-w-0">
-                <span className="text-[10px] font-bold text-amber-400 tracking-wider uppercase block">
-                  {lang === 'ar' ? 'تحدي اليوم' : "Today's Puzzle"}
-                </span>
-                <h2 className="text-sm sm:text-base font-serif font-black text-white leading-tight truncate">
-                  {lang === 'ar' ? dailyPuzzle.titleAr : dailyPuzzle.title}
-                </h2>
-              </div>
+            <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-lg border flex items-center gap-1.5 ${activeModeDetails.badgeColor}`}>
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              <span>{t.activeModeBadge}</span>
+            </span>
+
+            <span className={`text-[10.5px] font-semibold flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>{lang === 'ar' ? 'المراحل مستمرة تلقائياً' : 'Continuous mode'}</span>
+            </span>
+          </div>
+
+          {/* Active Mode Title & Icon */}
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${
+                isDarkMode ? 'bg-amber-400/20 border-amber-400/40 text-amber-300' : 'bg-amber-100 border-amber-300 text-amber-800'
+              }`}
+            >
+              <ActiveIcon className="w-6 h-6" />
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="text-[10px] font-mono font-black px-1.5 py-0.5 rounded bg-[#18202f] border border-[#2e3b52] text-amber-300 tabular-nums">
-                {dailyPuzzle.width}×{dailyPuzzle.height}
-              </span>
-              <span className="text-[10px] font-bold text-amber-300 flex items-center gap-0.5 bg-amber-400/15 px-1.5 py-0.5 rounded">
-                <Coins className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                <span>+35</span>
-              </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base sm:text-lg font-serif font-black leading-tight truncate">
+                {activeModeDetails.title}
+              </h2>
+              <p className={`text-xs mt-0.5 truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                {activeModeDetails.subtitle}
+              </p>
             </div>
           </div>
 
+          {/* If Levels Mode is active: Compact 4-pill tier selector */}
+          {selectedMode === 'levels' && (
+            <div className="grid grid-cols-4 gap-1.5 pt-1">
+              {tiersList.map(tier => (
+                <button
+                  key={tier.id}
+                  onClick={() => {
+                    sound.playPop();
+                    onSelectMode('levels', tier.id);
+                  }}
+                  className={`py-1.5 px-1 rounded-xl text-center text-xs font-black border transition-all cursor-pointer ${
+                    selectedTier === tier.id
+                      ? 'bg-amber-400 text-slate-950 border-amber-300 shadow-xs'
+                      : isDarkMode
+                      ? 'bg-[#18233c] text-slate-300 border-[#2b3c5e] hover:bg-[#202e4d]'
+                      : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="font-mono text-[11px] leading-tight">{tier.size}</div>
+                  <div className="text-[9.5px] truncate mt-0.5">{tier.label.split(' ')[0]}</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Primary Action Button */}
           <button
-            onClick={onPlayDaily}
-            className={`w-full py-2 px-3 font-black text-xs sm:text-sm rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm ${
-              isDailyDone
-                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600'
-                : 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 hover:brightness-105 text-slate-950 shadow-amber-500/20 active:scale-98'
-            }`}
+            onClick={onLaunchSelectedMode}
+            className="w-full py-3 px-4 font-black text-sm sm:text-base rounded-xl sm:rounded-2xl flex items-center justify-center gap-2 bg-gradient-to-r from-amber-400 via-amber-500 to-amber-400 hover:brightness-105 text-slate-950 shadow-sm border border-amber-300 active:scale-98 transition-all cursor-pointer"
           >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>
-              {isDailyDone
-                ? lang === 'ar'
-                  ? 'اللعب مجدداً (مكتمل ✓)'
-                  : 'Play Again (Solved ✓)'
-                : lang === 'ar'
-                ? 'بدء تحدي اليوم'
-                : 'Play Today Challenge'}
+            <Play className="w-4 h-4 fill-current shrink-0" />
+            <span className="truncate">
+              {lang === 'ar' ? 'بدء / متابعة اللعب' : 'Play Selected Mode'}
             </span>
+            <ArrowRight className="w-4 h-4 rtl:rotate-180 shrink-0" />
           </button>
         </div>
       </div>
 
-      {/* 3. Level Collections Hero Banner (Direct progression access) */}
-      <button
-        onClick={onPlayLevels}
-        className={`w-full p-2.5 sm:p-3 rounded-2xl border text-start transition-all cursor-pointer group shadow-2xs hover:shadow-xs flex items-center justify-between gap-2.5 ${
-          isDarkMode
-            ? 'bg-[#0f172a]/90 border-[#1e2942] hover:border-amber-400/60 text-white'
-            : 'bg-white border-slate-200 hover:border-slate-400 text-slate-950'
-        }`}
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div
-            className={`w-8 h-8 rounded-xl flex items-center justify-center group-hover:scale-105 transition-transform shrink-0 ${
-              isDarkMode ? 'bg-amber-400/20 text-amber-400' : 'bg-slate-950 text-amber-400'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-          </div>
-          <div className="min-w-0">
-            <h4 className="font-serif font-black text-xs sm:text-sm leading-tight truncate">
-              {lang === 'ar' ? 'المراحل ومجموعات الألغاز' : 'Level Collections'}
-            </h4>
-            <p className={`text-[10px] font-medium mt-0.5 truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              {lang === 'ar' ? '24 لغزاً متدرجة من 5×5 إلى 8×8' : '24 curated puzzles (5×5 to 8×8)'}
-            </p>
-          </div>
-        </div>
-
-        <span className={`text-[10px] font-bold px-2 py-1 rounded-lg border shrink-0 ${
-          isDarkMode
-            ? 'bg-[#18202f] border-[#2e3b52] text-amber-400'
-            : 'bg-slate-100 border-slate-200 text-slate-800'
-        }`}>
-          {lang === 'ar' ? 'استعراض' : 'Browse'} →
-        </span>
-      </button>
-
-      {/* 4. Special Modes Hub: Clean, balanced 2x2 Grid (No cramped 3-col truncation) */}
-      <div className="space-y-1.5">
+      {/* 3. Compact Mode Selector (Clean 2-Column Grid, No Bloat) */}
+      <div className="space-y-1.5 pt-1">
         <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Zap className="w-3.5 h-3.5 fill-amber-400" />
-            <span>{lang === 'ar' ? 'أنماط التحدي السريع' : 'Quick Challenges'}</span>
+          <span className="text-xs font-serif font-black flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>{t.selectGameMode}</span>
+          </span>
+          <span className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            {lang === 'ar' ? 'المراحل القادمة ستتبع اختيارك' : 'All next stages follow chosen mode'}
           </span>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          {/* Time Rush Blitz */}
-          <button
-            onClick={onPlayTimeRush}
-            className={`p-2.5 rounded-2xl border text-start transition-all cursor-pointer group shadow-2xs hover:shadow-xs flex items-center gap-2.5 ${
-              isDarkMode
-                ? 'bg-[#0f172a]/90 border-[#1e2942] hover:border-amber-400/60 text-white'
-                : 'bg-white border-slate-200 hover:border-amber-400 text-slate-950'
-            }`}
-          >
-            <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <Zap className="w-4 h-4 fill-amber-400" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-1">
-                <h5 className="font-serif font-black text-xs truncate">
-                  {lang === 'ar' ? 'سباق الوقت' : 'Time Rush'}
-                </h5>
-                <span className="text-[9px] font-mono font-black text-amber-400 px-1 py-0.2 rounded bg-amber-400/10 shrink-0">
-                  60s
-                </span>
-              </div>
-              <p className={`text-[10px] mt-0.5 truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {lang === 'ar' ? '3 مراحل متتالية' : '3 Blitz stages'}
-              </p>
-            </div>
-          </button>
+          {modeCards.map(mode => {
+            const isSelected = selectedMode === mode.id;
+            const Icon = mode.icon;
 
-          {/* Sudden Death */}
-          <button
-            onClick={onPlaySuddenDeath}
-            className={`p-2.5 rounded-2xl border text-start transition-all cursor-pointer group shadow-2xs hover:shadow-xs flex items-center gap-2.5 ${
-              isDarkMode
-                ? 'bg-[#0f172a]/90 border-[#1e2942] hover:border-rose-400/60 text-white'
-                : 'bg-white border-slate-200 hover:border-rose-400 text-slate-950'
-            }`}
-          >
-            <div className="w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <Skull className="w-4 h-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-1">
-                <h5 className="font-serif font-black text-xs truncate">
-                  {lang === 'ar' ? 'الخطوة الواحدة' : 'Sudden Death'}
-                </h5>
-                <span className="text-[9px] font-mono font-black text-rose-400 px-1 py-0.2 rounded bg-rose-500/10 shrink-0">
-                  0 Undo
-                </span>
-              </div>
-              <p className={`text-[10px] mt-0.5 truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {lang === 'ar' ? 'بدون أي تراجع' : 'Zero backtracks'}
-              </p>
-            </div>
-          </button>
+            return (
+              <button
+                key={mode.id}
+                onClick={() => {
+                  sound.playPop();
+                  onSelectMode(mode.id, mode.id === 'levels' ? selectedTier : undefined);
+                }}
+                className={`p-2.5 rounded-2xl border-2 text-start transition-all cursor-pointer flex items-center gap-2.5 relative group ${
+                  isSelected
+                    ? isDarkMode
+                      ? 'bg-amber-400/15 border-amber-400 shadow-xs'
+                      : 'bg-amber-50 border-amber-400 shadow-xs'
+                    : isDarkMode
+                    ? 'bg-[#0f172a]/80 border-[#1e2942] hover:border-slate-600'
+                    : 'bg-white border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                {/* Icon */}
+                <div
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    isSelected ? 'bg-amber-400 text-slate-950 font-black' : mode.accentColor
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                </div>
 
-          {/* Mega Weekly */}
-          <button
-            onClick={onPlayMegaWeekly}
-            className={`p-2.5 rounded-2xl border text-start transition-all cursor-pointer group shadow-2xs hover:shadow-xs flex items-center gap-2.5 ${
-              isDarkMode
-                ? 'bg-[#0f172a]/90 border-[#1e2942] hover:border-purple-400/60 text-white'
-                : 'bg-white border-slate-200 hover:border-purple-400 text-slate-950'
-            }`}
-          >
-            <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <Crown className="w-4 h-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-1">
-                <h5 className="font-serif font-black text-xs truncate">
-                  {lang === 'ar' ? 'العملاق 9×9' : 'Mega 9×9'}
-                </h5>
-                <span className="text-[9px] font-mono font-black text-amber-400 px-1 py-0.2 rounded bg-amber-400/10 shrink-0">
-                  +120🪙
-                </span>
-              </div>
-              <p className={`text-[10px] mt-0.5 truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {lang === 'ar' ? 'تحدي الأسبوع' : 'Weekly puzzle'}
-              </p>
-            </div>
-          </button>
-
-          {/* Custom / Free Play */}
-          <button
-            onClick={onPlayCustom}
-            className={`p-2.5 rounded-2xl border text-start transition-all cursor-pointer group shadow-2xs hover:shadow-xs flex items-center gap-2.5 ${
-              isDarkMode
-                ? 'bg-[#0f172a]/90 border-[#1e2942] hover:border-amber-400/60 text-white'
-                : 'bg-white border-slate-200 hover:border-slate-400 text-slate-950'
-            }`}
-          >
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-              <Dices className="w-4 h-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between gap-1">
-                <h5 className="font-serif font-black text-xs truncate">
-                  {lang === 'ar' ? 'لعب مخصص' : 'Custom Grid'}
-                </h5>
-                <span className="text-[9px] font-bold text-amber-400 px-1 py-0.2 rounded bg-amber-400/10 shrink-0">
-                  {lang === 'ar' ? 'حر' : 'Free'}
-                </span>
-              </div>
-              <p className={`text-[10px] mt-0.5 truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {lang === 'ar' ? 'أبعاد وصعوبة حرة' : 'Choose dimensions'}
-              </p>
-            </div>
-          </button>
+                {/* Info */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-serif font-black text-xs truncate">
+                      {mode.title}
+                    </span>
+                    {isSelected && (
+                      <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                    )}
+                  </div>
+                  <span
+                    className={`block text-[10px] truncate mt-0.5 ${
+                      isSelected
+                        ? 'text-amber-400 font-bold'
+                        : isDarkMode
+                        ? 'text-slate-400'
+                        : 'text-slate-500'
+                    }`}
+                  >
+                    {mode.tag}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* 5. Compact Utility Strip (Free hints via ad & shop shortcut) */}
-      <div className="grid grid-cols-2 gap-2 pt-0.5">
-        {/* Free Hints via Ad */}
-        {onOpenAdModal && (
-          <button
-            onClick={onOpenAdModal}
-            className={`p-2 rounded-xl border flex items-center gap-2 text-start cursor-pointer transition-all ${
-              isDarkMode
-                ? 'bg-[#0f172a]/80 border-[#1e2942] hover:border-amber-400/50'
-                : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
-            }`}
-          >
-            <div className="w-6.5 h-6.5 rounded-lg bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-400 shrink-0">
-              <Lightbulb className="w-3.5 h-3.5 fill-current" />
-            </div>
-            <div className="min-w-0">
-              <div className="font-serif font-black text-xs truncate flex items-center gap-1">
-                <span>{lang === 'ar' ? 'مساعدات مجانية' : 'Free Hints'}</span>
-                <span className="text-[9px] text-amber-400 font-bold">+2</span>
-              </div>
-              <div className={`text-[9.5px] truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                {lang === 'ar' ? 'إعلان قصير' : 'Brief ad'}
-              </div>
-            </div>
-          </button>
-        )}
-
-        {/* Shop Shortcut */}
-        <button
-          onClick={onOpenShop}
-          className={`p-2 rounded-xl border flex items-center gap-2 text-start cursor-pointer transition-all ${
+      {/* 4. Quick Daily Challenge Bar (Slim, only when not active mode) */}
+      {selectedMode !== 'daily' && (
+        <div
+          onClick={onPlayDaily}
+          className={`p-2.5 px-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
             isDarkMode
-              ? 'bg-[#0f172a]/80 border-[#1e2942] hover:border-amber-400/50'
+              ? 'bg-[#0f172a]/70 border-[#1e2942] hover:border-emerald-500/40'
               : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
           }`}
         >
-          <div className="w-6.5 h-6.5 rounded-lg bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-400 shrink-0">
-            <ShoppingBag className="w-3.5 h-3.5" />
-          </div>
-          <div className="min-w-0">
-            <div className="font-serif font-black text-xs truncate">
-              {t.navShop}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0">
+              <Calendar className="w-3.5 h-3.5" />
             </div>
-            <div className={`text-[9.5px] truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-              {lang === 'ar' ? 'سمات وأشكال' : 'Themes & skins'}
+            <div className="min-w-0">
+              <div className="font-serif font-black text-xs truncate">
+                {lang === 'ar' ? 'لغز اليوم (تحدي التقويم)' : 'Daily Calendar Challenge'}
+              </div>
+              <div className={`text-[10px] truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                {isDailyDone
+                  ? (lang === 'ar' ? 'أُنجز اليوم بنجاح ✓' : 'Completed today ✓')
+                  : (lang === 'ar' ? `${dailyPuzzle.width}×${dailyPuzzle.height} · اضغط للحل السريع` : `${dailyPuzzle.width}×${dailyPuzzle.height} · Tap to solve`)}
+              </div>
             </div>
           </div>
-        </button>
-      </div>
+
+          <div className="flex items-center gap-1 text-xs font-bold text-emerald-400 shrink-0">
+            <span>{isDailyDone ? (lang === 'ar' ? 'محلول' : 'Solved') : (lang === 'ar' ? 'العب' : 'Play')}</span>
+            <ChevronRight className="w-3.5 h-3.5 rtl:rotate-180" />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
