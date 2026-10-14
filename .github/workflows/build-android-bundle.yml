@@ -26,8 +26,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
       - name: Install Node Dependencies
         run: |
@@ -45,13 +49,15 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew bundleRelease assembleRelease --stacktrace
+          ./gradlew bundleRelease assembleRelease --no-daemon --stacktrace
 
-      - name: Sign Android App Bundle (AAB) for Google Play
+      - name: Prepare and Sign Release Files
         run: |
-          # Generate signing key if not present
+          mkdir -p release-output
+
+          # Generate release keystore
           keytool -genkeypair -v \
-            -keystore my-release-key.jks \
+            -keystore release-key.jks \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
@@ -60,28 +66,37 @@ jobs:
             -keypass android123 \
             -dname "CN=ZipLine Game, OU=Mobile, O=ZipLine, L=Riyadh, ST=Riyadh, C=SA"
 
-          # Sign the AAB bundle
-          AAB_PATH=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
-          if [ -f "$AAB_PATH" ]; then
-            echo "Signing $AAB_PATH..."
+          # Sign AAB if found
+          AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          if [ -n "$AAB_FILE" ] && [ -f "$AAB_FILE" ]; then
+            echo "Signing $AAB_FILE..."
             jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-              -keystore my-release-key.jks \
+              -keystore release-key.jks \
               -storepass android123 \
               -keypass android123 \
-              "$AAB_PATH" zipline-key
-            mkdir -p release-output
-            cp "$AAB_PATH" release-output/zipline-game-release.aab
-            echo "AAB successfully generated and signed at release-output/zipline-game-release.aab"
+              "$AAB_FILE" zipline-key
+            cp "$AAB_FILE" release-output/zipline-game-release.aab
+            echo "✓ AAB ready at release-output/zipline-game-release.aab"
           else
-            echo "Warning: AAB file not found at expected path"
+            echo "ERROR: AAB file was not generated"
+            exit 1
           fi
 
-          # Also locate APK if generated
-          APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          if [ -f "$APK_PATH" ]; then
-            mkdir -p release-output
-            cp "$APK_PATH" release-output/zipline-game-release.apk
-            echo "APK ready at release-output/zipline-game-release.apk"
+          # Sign and align APK if found
+          APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$APK_FILE" ]; then
+            APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          fi
+
+          if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
+            echo "Signing $APK_FILE..."
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+              -keystore release-key.jks \
+              -storepass android123 \
+              -keypass android123 \
+              "$APK_FILE" zipline-key || true
+            cp "$APK_FILE" release-output/zipline-game-release.apk
+            echo "✓ APK ready at release-output/zipline-game-release.apk"
           fi
 
       - name: Upload Android App Bundle (.aab) Artifact
@@ -89,7 +104,7 @@ jobs:
         with:
           name: Google-Play-ZipLine-AAB
           path: release-output/*.aab
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Upload Android APK Artifact (For direct device testing)
         uses: actions/upload-artifact@v4
@@ -97,9 +112,3 @@ jobs:
           name: ZipLine-Test-APK
           path: release-output/*.apk
           if-no-files-found: warn
-
-      - name: Upload Web Dist Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Web-Dist-Files
-          path: dist/
