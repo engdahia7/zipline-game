@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Tajawal', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Custom styling for game grid and line smoothness */
+.grid-cell-transition {
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+/* Disable drag ghosts */
+img, svg, button {
+  -webkit-user-drag: none;
+}

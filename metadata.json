@@ -1,0 +1,8 @@
+{
+  "name": "ZipLine",
+  "description": "Daily number path puzzle game where players connect ordered checkpoints and visit every cell in a continuous line.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
