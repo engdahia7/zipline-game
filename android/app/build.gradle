@@ -1,5 +1,31 @@
 apply plugin: 'com.android.application'
 
+def versionPropsFile = file('version.properties')
+def defaultCode = 2
+def defaultName = "1.0.1"
+
+if (versionPropsFile.canRead()) {
+    Properties versionProps = new Properties()
+    versionProps.load(new FileInputStream(versionPropsFile))
+    defaultCode = versionProps['VERSION_CODE'] ? versionProps['VERSION_CODE'].toInteger() : 2
+    defaultName = versionProps['VERSION_NAME'] ?: "1.0.1"
+}
+
+def appVersionCode = defaultCode
+def appVersionName = defaultName
+
+if (System.getenv("GITHUB_RUN_NUMBER")) {
+    // In GitHub Actions, automatically increment version code with each run
+    appVersionCode = System.getenv("GITHUB_RUN_NUMBER").toInteger() + 1
+    appVersionName = "1.0." + appVersionCode
+} else if (System.getenv("BUILD_NUMBER")) {
+    appVersionCode = System.getenv("BUILD_NUMBER").toInteger()
+    appVersionName = "1.0." + appVersionCode
+} else if (project.hasProperty("versionCode")) {
+    appVersionCode = project.property("versionCode").toInteger()
+    appVersionName = project.hasProperty("versionName") ? project.property("versionName").toString() : "1.0." + appVersionCode
+}
+
 android {
     namespace = "com.zipline.game.puzzle"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +33,8 @@ android {
         applicationId "com.zipline.game.puzzle"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -56,3 +82,20 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
+tasks.register('autoIncrementVersion') {
+    doLast {
+        if (versionPropsFile.canRead()) {
+            Properties versionProps = new Properties()
+            versionProps.load(new FileInputStream(versionPropsFile))
+            def currentCode = versionProps['VERSION_CODE'] ? versionProps['VERSION_CODE'].toInteger() : 1
+            def nextCode = currentCode + 1
+            def nextName = "1.0.${nextCode}"
+            versionProps['VERSION_CODE'] = nextCode.toString()
+            versionProps['VERSION_NAME'] = nextName
+            versionProps.store(versionPropsFile.newWriter(), null)
+            println ">>> Auto-incremented ZipLine version to Code: ${nextCode}, Name: ${nextName}"
+        }
+    }
+}
+

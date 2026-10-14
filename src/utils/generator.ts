@@ -219,6 +219,16 @@ export function detectDeadEnd(
   const visitedSet = new Set<string>();
   path.forEach(c => visitedSet.add(`${c.r},${c.c}`));
 
+  // Fast O(1) wall barrier lookup table
+  const wallSet = new Set<string>();
+  walls.forEach(w => {
+    wallSet.add(getWallKey(w.r1, w.c1, w.r2, w.c2));
+  });
+
+  const isBlockedFast = (a: Coordinate, b: Coordinate): boolean => {
+    return wallSet.has(getWallKey(a.r, a.c, b.r, b.c));
+  };
+
   const dirs = [
     { dr: -1, dc: 0 },
     { dr: 1, dc: 0 },
@@ -240,7 +250,7 @@ export function detectDeadEnd(
         const nc = c + d.dc;
         if (nr >= 0 && nr < height && nc >= 0 && nc < width) {
           const neighborCoord: Coordinate = { r: nr, c: nc };
-          if (!isMoveBlockedByWall(cellCoord, neighborCoord, walls)) {
+          if (!isBlockedFast(cellCoord, neighborCoord)) {
             // Is it unvisited, OR is it the current tip of our path?
             if (!visitedSet.has(`${nr},${nc}`) || (nr === currentTip.r && nc === currentTip.c)) {
               availableNeighbors++;

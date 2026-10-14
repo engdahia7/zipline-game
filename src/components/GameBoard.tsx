@@ -48,6 +48,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
+  const lastCellKeyRef = useRef<string | null>(null);
+  const lastShakeTimeRef = useRef<number>(0);
+  const particleTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const [isPointerDown, setIsPointerDown] = useState(false);
   const [shakingCell, setShakingCell] = useState<string | null>(null);
   const [blockedWallKey, setBlockedWallKey] = useState<string | null>(null);
@@ -88,6 +92,17 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
   const nextExpectedCheckpoint = currentMaxCheckpoint + 1;
 
+  // Fast O(1) wall barrier lookup table
+  const wallSet = useMemo(() => {
+    const set = new Set<string>();
+    walls.forEach(w => set.add(getWallKey(w.r1, w.c1, w.r2, w.c2)));
+    return set;
+  }, [walls]);
+
+  const isBlockedFast = useCallback((from: Coordinate, to: Coordinate): boolean => {
+    return wallSet.has(getWallKey(from.r, from.c, to.r, to.c));
+  }, [wallSet]);
+
   // Set of valid adjacent coordinates player can step to next
   const validNextMoveSet = useMemo(() => {
     const set = new Set<string>();
@@ -106,7 +121,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     for (const d of dirs) {
       if (d.r >= 0 && d.r < height && d.c >= 0 && d.c < width) {
         if (!visitedSet.has(`${d.r},${d.c}`)) {
-          if (!isMoveBlockedByWall(currentTip, d, walls)) {
+          if (!isBlockedFast(currentTip, d)) {
             const val = checkpointMap.get(`${d.r},${d.c}`);
             if (val === undefined || val === nextExpectedCheckpoint) {
               set.add(`${d.r},${d.c}`);
@@ -116,18 +131,22 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       }
     }
     return set;
-  }, [path, checkpoints, height, width, visitedSet, walls, checkpointMap, nextExpectedCheckpoint]);
+  }, [path, checkpoints, height, width, visitedSet, isBlockedFast, checkpointMap, nextExpectedCheckpoint]);
 
-  // Trigger brief shake on illegal move
-  const triggerShake = (coord: Coordinate) => {
+  // Trigger brief shake on illegal move with strict throttling
+  const triggerShake = useCallback((coord: Coordinate) => {
+    const now = Date.now();
+    if (now - lastShakeTimeRef.current < 320) return;
+    lastShakeTimeRef.current = now;
+
     setShakingCell(`${coord.r},${coord.c}`);
     sound.playInvalid();
-    setTimeout(() => setShakingCell(null), 300);
-  };
+    setTimeout(() => setShakingCell(null), 240);
+  }, []);
 
   // Process attempt to move to a cell
   const handleTryMove = useCallback(
-    (target: Coordinate) => {
+    (target: Coordinate, isDirectTap = false) => {
       if (disabled) return;
 
       if (path.length === 0) {
@@ -136,7 +155,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         if (startCp && startCp.r === target.r && startCp.c === target.c) {
           sound.playCheckpoint(1);
           onPathChange([target]);
-        } else {
+        } else if (isDirectTap) {
           triggerShake(target);
         }
         return;
@@ -172,9 +191,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       const isValidSingleStep = (from: Coordinate, to: Coordinate): boolean => {
         if (!isAdjacent(from, to)) return false;
         if (visitedSet.has(`${to.r},${to.c}`)) return false;
-        if (isMoveBlockedByWall(from, to, walls)) {
+        if (isBlockedFast(from, to)) {
           setBlockedWallKey(getWallKey(from.r, from.c, to.r, to.c));
-          setTimeout(() => setBlockedWallKey(null), 450);
+          setTimeout(() => setBlockedWallKey(null), 350);
           return false;
         }
         const val = checkpointMap.get(`${to.r},${to.c}`);
@@ -188,15 +207,19 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         const cellSize = 60;
         const cx = (coord.c + 0.5) * cellSize;
         const cy = (coord.r + 0.5) * cellSize;
-        const newBatch: TrailParticle[] = Array.from({ length: 4 }).map((_, i) => ({
-          id: Date.now() + Math.random() + i,
+        const newBatch: TrailParticle[] = Array.from({ length: 3 }).map((_, i) => ({
+          id: Date.now() + i,
           x: cx,
           y: cy,
-          dx: (Math.random() - 0.5) * 36,
-          dy: (Math.random() - 0.5) * 36 - 10,
+          dx: (Math.random() - 0.5) * 24,
+          dy: (Math.random() - 0.5) * 24 - 4,
           color: theme.pathGradientStart,
         }));
-        setParticles(prev => [...prev.slice(-14), ...newBatch]);
+        setParticles(newBatch);
+        if (particleTimerRef.current) clearTimeout(particleTimerRef.current);
+        particleTimerRef.current = setTimeout(() => {
+          setParticles([]);
+        }, 260);
       };
 
       // Case A: Directly Adjacent Move (1 step)
@@ -213,7 +236,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
           onPathChange(newPath);
           return;
         } else {
-          triggerShake(target);
+          // If direct tap or blocked wall, notify user
+          if (isDirectTap || isBlockedFast(currentTip, target)) {
+            triggerShake(target);
+          }
           return;
         }
       }
@@ -246,10 +272,12 @@ export const GameBoard: React.FC<GameBoardProps> = ({
         }
       }
 
-      // Any non-adjacent illegal jump is rejected
-      triggerShake(target);
+      // Any non-adjacent illegal jump is rejected - only shake if player directly tapped it
+      if (isDirectTap) {
+        triggerShake(target);
+      }
     },
-    [disabled, path, checkpoints, walls, checkpointMap, nextExpectedCheckpoint, visitedSet, onPathChange, theme.pathGradientStart]
+    [disabled, path, checkpoints, checkpointMap, nextExpectedCheckpoint, visitedSet, isBlockedFast, onPathChange, triggerShake, theme.pathGradientStart]
   );
 
   // Step via directional controls (Up, Down, Left, Right)
@@ -310,18 +338,22 @@ export const GameBoard: React.FC<GameBoardProps> = ({
       return;
     }
     setIsPointerDown(true);
+    lastCellKeyRef.current = `${r},${c}`;
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
       // ignore
     }
-    handleTryMove({ r, c });
+    handleTryMove({ r, c }, true);
   };
 
   // Cell pointer enter (for mouse dragging)
   const handleCellPointerEnter = (r: number, c: number) => {
     if (isPointerDown && !disabled && !isPencilMode) {
-      handleTryMove({ r, c });
+      const cellKey = `${r},${c}`;
+      if (lastCellKeyRef.current === cellKey) return;
+      lastCellKeyRef.current = cellKey;
+      handleTryMove({ r, c }, false);
     }
   };
 
@@ -330,7 +362,10 @@ export const GameBoard: React.FC<GameBoardProps> = ({
     if (!isPointerDown || disabled || isPencilMode) return;
     const cell = getCellFromPointer(e.clientX, e.clientY);
     if (cell) {
-      handleTryMove(cell);
+      const cellKey = `${cell.r},${cell.c}`;
+      if (lastCellKeyRef.current === cellKey) return;
+      lastCellKeyRef.current = cellKey;
+      handleTryMove(cell, false);
     }
   };
 
@@ -338,6 +373,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   useEffect(() => {
     const handleGlobalPointerUp = () => {
       setIsPointerDown(false);
+      lastCellKeyRef.current = null;
     };
     window.addEventListener('pointerup', handleGlobalPointerUp);
     window.addEventListener('pointercancel', handleGlobalPointerUp);
@@ -448,7 +484,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                     onPointerDown={e => handleCellPointerDown(r, c, e)}
                     onPointerEnter={() => handleCellPointerEnter(r, c)}
                     className={`
-                      relative rounded-2xl flex items-center justify-center cursor-pointer transition-all duration-150 touch-none select-none
+                      relative rounded-2xl flex items-center justify-center cursor-pointer transition-colors duration-100 touch-none select-none
                       ${isVisited ? theme.cellVisitedClass : theme.cellUnvisitedClass}
                       ${isValidNext ? 'ring-2 ring-amber-400/50 shadow-inner' : ''}
                       ${isShaking ? 'ring-2 ring-rose-500 scale-95' : ''}
@@ -546,43 +582,49 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 <stop offset="0%" stopColor={theme.pathGradientStart} />
                 <stop offset="100%" stopColor={theme.pathGradientEnd} />
               </linearGradient>
-              <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor={theme.pathGlowColor} floodOpacity="0.5" />
-              </filter>
             </defs>
 
-            {/* Connected Path Ribbon: High-contrast casing + Glowing vivid Core + Gloss highlight */}
+            {/* Connected Path Ribbon: Ambient Glow + High-contrast casing + Vivid Core + Specular gloss */}
             {svgPathD && (
               <>
-                {/* Contrast underlay border */}
+                {/* 1. Hardware-accelerated wide ambient glow underlay (replaces heavy feDropShadow filter) */}
+                <path
+                  d={svgPathD}
+                  fill="none"
+                  stroke={theme.pathGlowColor}
+                  strokeWidth={cellSize * 0.44}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.35"
+                  style={{ pointerEvents: 'none' }}
+                />
+                {/* 2. Sharp contrast underlay border */}
                 <path
                   d={svgPathD}
                   fill="none"
                   stroke="#050a14"
-                  strokeWidth={cellSize * 0.44}
+                  strokeWidth={cellSize * 0.36}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity="0.95"
                   style={{ pointerEvents: 'none' }}
                 />
-                {/* Vivid colored core ribbon with glow */}
+                {/* 3. Vivid colored core ribbon */}
                 <path
                   d={svgPathD}
                   fill="none"
                   stroke="url(#pathGradient)"
-                  strokeWidth={cellSize * 0.32}
+                  strokeWidth={cellSize * 0.26}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  filter="url(#lineGlow)"
                   style={{ pointerEvents: 'none' }}
-                  className="transition-all duration-75"
                 />
-                {/* Specular gloss highlight line */}
+                {/* 4. Specular gloss highlight line */}
                 <path
                   d={svgPathD}
                   fill="none"
                   stroke="#ffffff"
-                  strokeWidth={cellSize * 0.08}
+                  strokeWidth={cellSize * 0.07}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity="0.55"
@@ -591,23 +633,21 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               </>
             )}
 
-            {/* Trail Particles FX */}
+            {/* Trail Particles FX - Lightweight burst */}
             {particles.map(p => (
               <g key={p.id}>
                 <circle
                   cx={p.x + p.dx * 0.5}
                   cy={p.y + p.dy * 0.5}
-                  r={cellSize * 0.08}
+                  r={cellSize * 0.07}
                   fill={p.color}
-                  className="animate-ping"
                   opacity="0.8"
                 />
                 <circle
                   cx={p.x + p.dx}
                   cy={p.y + p.dy}
-                  r={cellSize * 0.05}
+                  r={cellSize * 0.04}
                   fill="#ffffff"
-                  className="animate-pulse"
                   opacity="0.9"
                 />
               </g>

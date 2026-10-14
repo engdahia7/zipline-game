@@ -21,7 +21,14 @@ class SoundEngine {
     }
   }
 
-  private triggerHaptic(duration: number | number[] = 10) {
+  private lastHapticTime: number = 0;
+
+  private triggerHaptic(duration: number | number[] = 8) {
+    const now = Date.now();
+    // Throttle haptics so WebView thread is never locked up
+    if (now - this.lastHapticTime < 75) return;
+    this.lastHapticTime = now;
+
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try {
         navigator.vibrate(duration);
@@ -175,7 +182,7 @@ class SoundEngine {
 
   // Subtle low bump for wall collisions or blocked paths
   public playInvalid() {
-    this.triggerHaptic([15, 30, 15]);
+    this.triggerHaptic(15);
     if (!this.enabled) return;
     this.initContext();
     if (!this.ctx) return;

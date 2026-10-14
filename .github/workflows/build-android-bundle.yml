@@ -71,7 +71,10 @@ jobs:
           chmod +x android/gradlew 2>/dev/null || true
 
           # Generate high-res Android & PWA icons
-          if [ -f "./scripts/generate-icons.js" ]; then
+          if [ -f "./scripts/generate-android-icons.js" ]; then
+            echo "Generating high-res custom ZipLine launcher & adaptive icons..."
+            node ./scripts/generate-android-icons.js || true
+          elif [ -f "./scripts/generate-icons.js" ]; then
             echo "Generating high-res icons for Android mipmap..."
             node ./scripts/generate-icons.js || true
           fi
@@ -79,12 +82,26 @@ jobs:
           echo "Syncing Capacitor assets to Android..."
           npx cap sync android
 
-      - name: Build Android Bundle (.aab) and APK
+      - name: Compute Dynamic Version & Build Android Bundle (.aab) and APK
         run: |
+          # Automatically increment version code with every GitHub Actions build
+          # Base offset is 1, so Run 1 -> Code 2, Run 2 -> Code 3, etc. (Guaranteed unique for Google Play)
+          RUN_NUM=${{ github.run_number }}
+          AUTO_VERSION_CODE=$(( RUN_NUM + 1 ))
+          AUTO_VERSION_NAME="1.0.${AUTO_VERSION_CODE}"
+
+          echo "=========================================================="
+          echo "Building ZipLine Android App"
+          echo "Version Code: $AUTO_VERSION_CODE"
+          echo "Version Name: $AUTO_VERSION_NAME"
+          echo "=========================================================="
+
           cd android
           chmod +x gradlew 2>/dev/null || true
-          echo "Building Android App Bundle (.aab) and APK..."
-          ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --stacktrace
+          ./gradlew :app:bundleRelease :app:assembleRelease \
+            -PversionCode=$AUTO_VERSION_CODE \
+            -PversionName=$AUTO_VERSION_NAME \
+            --no-daemon --stacktrace
 
       - name: Prepare and Sign Release Files
         run: |
