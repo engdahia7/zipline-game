@@ -51,6 +51,17 @@ jobs:
             echo "Android native directory is already present."
           fi
 
+          # Ensure settings.gradle exists so Gradle knows the :app subproject
+          if [ ! -f "android/settings.gradle" ]; then
+            echo "Restoring settings.gradle into android/..."
+            tar -xzf node_modules/@capacitor/cli/assets/android-template.tar.gz -C android settings.gradle 2>/dev/null || cat << 'EOF' > android/settings.gradle
+include ':app'
+include ':capacitor-cordova-android-plugins'
+project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
+apply from: 'capacitor.settings.gradle'
+EOF
+          fi
+
           # Ensure gradlew executable wrapper is available
           if [ ! -f "android/gradlew" ]; then
             echo "Restoring gradlew wrapper into android/..."
@@ -76,12 +87,13 @@ jobs:
       - name: Build Android Bundle (.aab) and APK
         run: |
           cd android
+          chmod +x gradlew 2>/dev/null || true
+          echo "Building Android App Bundle (.aab) and APK..."
           if [ -f "gradlew" ]; then
-            chmod +x gradlew
-            ./gradlew bundleRelease assembleRelease --no-daemon --stacktrace
+            ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --stacktrace || ./gradlew bundleRelease assembleRelease --no-daemon --stacktrace
           else
             echo "Using system gradle..."
-            gradle bundleRelease assembleRelease --no-daemon --stacktrace
+            gradle :app:bundleRelease :app:assembleRelease --no-daemon --stacktrace || gradle bundleRelease assembleRelease --no-daemon --stacktrace
           fi
 
       - name: Prepare and Sign Release Files
@@ -100,8 +112,16 @@ jobs:
             -dname "CN=ZipLine Game, OU=Mobile, O=ZipLine, L=Riyadh, ST=Riyadh, C=SA"
 
           # Sign AAB if found
-          AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" 2>/dev/null | head -n 1)
+          if [ -z "$AAB_FILE" ] || [ ! -f "$AAB_FILE" ]; then
+            AAB_FILE=$(find android/app/build/outputs -name "*release*.aab" 2>/dev/null | head -n 1)
+          fi
+          if [ -z "$AAB_FILE" ] || [ ! -f "$AAB_FILE" ]; then
+            AAB_FILE=$(find android -name "*.aab" 2>/dev/null | head -n 1)
+          fi
+
           if [ -n "$AAB_FILE" ] && [ -f "$AAB_FILE" ]; then
+            echo "Found AAB at: $AAB_FILE"
             echo "Signing $AAB_FILE..."
             jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
               -keystore release-key.jks \
@@ -112,12 +132,17 @@ jobs:
             echo "✓ AAB ready at release-output/zipline-game-release.aab"
           else
             echo "ERROR: AAB file was not generated"
+            find android -name "*.aab" || true
             exit 1
           fi
 
           # Sign APK if found
-          APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -n 1)
+          if [ -z "$APK_FILE" ] || [ ! -f "$APK_FILE" ]; then
+            APK_FILE=$(find android/app/build/outputs -name "*.apk" 2>/dev/null | head -n 1)
+          fi
           if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
+            echo "Found APK at: $APK_FILE"
             echo "Signing $APK_FILE..."
             jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
               -keystore release-key.jks \
