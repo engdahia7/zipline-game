@@ -41,15 +41,32 @@ jobs:
         run: |
           npm run build
 
-      - name: Sync Capacitor Android
+      - name: Prepare Capacitor Android Platform
         run: |
+          # If android directory or gradlew is missing, create it automatically
+          if [ ! -f "android/gradlew" ]; then
+            echo "Android native project not found in repository. Initializing Capacitor Android..."
+            npx cap add android
+            if [ -f "android/variables.gradle" ]; then
+              sed -i 's/compileSdkVersion = 36/compileSdkVersion = 35/g' android/variables.gradle || true
+              sed -i 's/targetSdkVersion = 36/targetSdkVersion = 35/g' android/variables.gradle || true
+            fi
+            echo "Generating high-res icons for Android mipmap..."
+            node ./scripts/generate-icons.js || true
+          fi
+          echo "Syncing Capacitor assets to Android..."
           npx cap sync android
 
       - name: Build Android Bundle (.aab) and APK
         run: |
           cd android
-          chmod +x gradlew
-          ./gradlew bundleRelease assembleRelease --no-daemon --stacktrace
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew bundleRelease assembleRelease --no-daemon --stacktrace
+          else
+            echo "Using system gradle..."
+            gradle bundleRelease assembleRelease --no-daemon --stacktrace
+          fi
 
       - name: Prepare and Sign Release Files
         run: |
@@ -82,12 +99,8 @@ jobs:
             exit 1
           fi
 
-          # Sign and align APK if found
-          APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          if [ -z "$APK_FILE" ]; then
-            APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          fi
-
+          # Sign APK if found
+          APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
           if [ -n "$APK_FILE" ] && [ -f "$APK_FILE" ]; then
             echo "Signing $APK_FILE..."
             jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
