@@ -54,12 +54,12 @@ jobs:
           # Ensure settings.gradle exists so Gradle knows the :app subproject
           if [ ! -f "android/settings.gradle" ]; then
             echo "Restoring settings.gradle into android/..."
-            tar -xzf node_modules/@capacitor/cli/assets/android-template.tar.gz -C android settings.gradle 2>/dev/null || cat << 'EOF' > android/settings.gradle
-include ':app'
-include ':capacitor-cordova-android-plugins'
-project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
-apply from: 'capacitor.settings.gradle'
-EOF
+            tar -xzf node_modules/@capacitor/cli/assets/android-template.tar.gz -C android settings.gradle 2>/dev/null || {
+              echo "include ':app'" > android/settings.gradle
+              echo "include ':capacitor-cordova-android-plugins'" >> android/settings.gradle
+              echo "project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')" >> android/settings.gradle
+              echo "apply from: 'capacitor.settings.gradle'" >> android/settings.gradle
+            }
           fi
 
           # Ensure gradlew executable wrapper is available
