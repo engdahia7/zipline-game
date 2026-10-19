@@ -107,16 +107,36 @@ jobs:
         run: |
           mkdir -p release-output
 
-          # Generate release keystore
-          keytool -genkeypair -v \
+          # Use permanent release keystore from repository so signing key NEVER changes
+          if [ -f "android/release-key.jks" ]; then
+            echo "Using permanent repository release keystore: android/release-key.jks"
+            cp android/release-key.jks release-key.jks
+          else
+            echo "Generating fallback keystore..."
+            keytool -genkeypair -v \
+              -keystore release-key.jks \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -alias zipline-key \
+              -storepass android123 \
+              -keypass android123 \
+              -dname "CN=ZipLine Game, OU=Mobile, O=ZipLine, L=Riyadh, ST=Riyadh, C=SA"
+          fi
+
+          # Export upload certificate for Google Play App Signing
+          keytool -export -rfc \
             -keystore release-key.jks \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
             -alias zipline-key \
             -storepass android123 \
-            -keypass android123 \
-            -dname "CN=ZipLine Game, OU=Mobile, O=ZipLine, L=Riyadh, ST=Riyadh, C=SA"
+            -file release-output/upload_certificate.pem || true
+
+          if [ -f "upload_certificate.pem" ]; then
+            cp upload_certificate.pem release-output/upload_certificate.pem
+          fi
+
+          echo "Keystore SHA1 Fingerprint:"
+          keytool -list -v -keystore release-key.jks -alias zipline-key -storepass android123 | grep "SHA1:" || true
 
           # Sign AAB if found
           AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" 2>/dev/null | head -n 1)
@@ -173,3 +193,11 @@ jobs:
           name: ZipLine-Test-APK
           path: release-output/*.apk
           if-no-files-found: warn
+
+      - name: Upload Google Play Signing Certificate (.pem)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Google-Play-Signing-Certificate
+          path: release-output/upload_certificate.pem
+          if-no-files-found: warn
+
